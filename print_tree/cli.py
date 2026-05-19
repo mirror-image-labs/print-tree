@@ -38,6 +38,7 @@ DEFAULT_IGNORES = {
     ".python-version",
     "README.md",
     "pyproject.toml",
+    '.env*',
 }
 
 
@@ -130,6 +131,8 @@ def print_files(
 
     if not root_path:
         root_path = Path(common_ancestor(files))
+    else:
+        root_path = root_path.resolve()
 
 
     results: list[ResultType] = []
@@ -170,7 +173,7 @@ def process_input_path(
         yield path
     else:
         if not no_gitignore:
-            gitignore_patterns = load_gitignore_patterns(root=path)
+            gitignore_patterns = load_gitignore_patterns(root=path, verbose=verbose)
             ignore_patterns.extend(gitignore_patterns)
 
         if ignore:

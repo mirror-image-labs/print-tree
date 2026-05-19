@@ -1,9 +1,10 @@
 
 from pathlib import Path
 import subprocess
+from rich import print
 
 
-def is_git_repo(root: Path) -> bool:
+def is_git_repo(root: Path, verbose: bool = False) -> bool:
     """
     Check whether the directory is inside a git repository.
     """
@@ -13,19 +14,28 @@ def is_git_repo(root: Path) -> bool:
         cwd=root,
         stdout=subprocess.DEVNULL,
         stderr=subprocess.DEVNULL,
-        check=False,
+        check=True,
     )
+    rv = result.returncode == 0
+    if verbose:
+        if rv:
+            print(f"[green]Git repository detected at: {root}[/green]")
+        else:
+            print(f"[yellow]No git repository detected at: {root}[/yellow]")
 
-    return result.returncode == 0
+    return rv
 
 
-def load_gitignore_patterns(root: Path) -> list[str]:
+def load_gitignore_patterns(
+    root: Path,
+    verbose: bool = False,
+) -> list[str]:
     """
     Load .gitignore patterns from the repository, including nested .gitignore files.
     """
     patterns: list[str] = []
 
-    if not is_git_repo(root):
+    if not is_git_repo(root, verbose=verbose):
         return patterns
 
     result = subprocess.run(
