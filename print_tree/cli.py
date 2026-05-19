@@ -1,9 +1,9 @@
 from __future__ import annotations
 
 import json
-import mimetypes
 from pathlib import Path
 from typing import Iterable, Optional, TypedDict
+from itertools import chain
 
 import typer
 from rich.console import Console
@@ -12,7 +12,7 @@ from rich.syntax import Syntax
 from rich.text import Text
 from print_tree.git import load_gitignore_patterns
 from print_tree.file_helpers import is_probably_text_file, read_file, detect_lexer
-from print_tree.traversal import iter_files
+from print_tree.traversal import iter_files, common_ancestor
 from print_tree.matcher import Matcher
 
 
@@ -48,13 +48,19 @@ class ResultType(TypedDict):
 
 @app.command()
 def print_files(
-    directory: Path = typer.Argument(
+    input_paths: list[Path] = typer.Argument(
         ...,
+        metavar="PATH",
         exists=True,
-        file_okay=False,
         readable=True,
         resolve_path=True,
-        help="Root directory to scan.",
+        help="Files or directories to print. Directories will be searched recursively.",
+    ),
+    root_path: Optional[Path] = typer.Option(
+        None,
+        "--root",
+        help=("Root directory for relative paths. Defaults to"
+        " the common ancestor of all provided paths."),
     ),
     include: list[str] = typer.Option(
         None,
@@ -113,27 +119,18 @@ def print_files(
 
     ignore_patterns = list(DEFAULT_IGNORES)
 
-    if not no_gitignore:
-        gitignore_patterns = load_gitignore_patterns(
-            directory
-        )
-        ignore_patterns.extend(gitignore_patterns)
 
-    if ignore:
-        ignore_patterns.extend(ignore)
-
-    if verbose:
-        console.print(f"[green]Number of ignore patterns: {len(ignore_patterns)}[/green]")
-        for pattern in ignore_patterns:
-            console.print(f"  [yellow]{pattern}[/yellow]")
-
-    matcher = Matcher(
-        root=directory,
-        include_patterns=include or [],
+    files = list(chain.from_iterable(process_input_path(
+        input_path,
         ignore_patterns=ignore_patterns,
-    )
+        no_gitignore=no_gitignore,
+        verbose=verbose,        ignore=ignore,
+        include=include,
+    ) for input_path in input_paths))
 
-    files = list(iter_files(directory, matcher))
+    if not root_path:
+        root_path = Path(common_ancestor(files))
+
 
     results: list[ResultType] = []
     for path in files:
@@ -143,7 +140,7 @@ def print_files(
             include_binary,
             encoding,
             json_output,
-            directory,
+            root_path,
             summary,
             pretty,
         )
@@ -157,6 +154,43 @@ def print_files(
     )
 
 
+def process_input_path(
+    path: Path,
+    ignore_patterns: Optional[list[str]] = None,
+    no_gitignore: bool = False,
+    verbose: bool = False,
+    ignore: Optional[list[str]] = None,
+    include: Optional[list[str]] = None,
+) -> Iterable[Path]:
+    """Process a user-provided path, yielding files to be printed."""
+    if ignore_patterns is None:
+        ignore_patterns = []
+    if path.is_file():
+        # Always include user-provided files in output
+        yield path
+    else:
+        if not no_gitignore:
+            gitignore_patterns = load_gitignore_patterns(root=path)
+            ignore_patterns.extend(gitignore_patterns)
+
+        if ignore:
+            ignore_patterns.extend(ignore)
+
+        if verbose:
+            console.print(f"[green]Number of ignore patterns: {len(ignore_patterns)}[/green]")
+            for pattern in ignore_patterns:
+                console.print(f"  [yellow]{pattern}[/yellow]")
+
+        matcher = Matcher(
+            root=path,
+            include_patterns=include or [],
+            ignore_patterns=ignore_patterns,
+        )
+
+        yield from iter_files(path, matcher)
+
+
+
 def process_path(
     path: Path,
     max_size_kb: int,
@@ -167,6 +201,7 @@ def process_path(
     summary: bool,
     pretty: bool,
 ) -> ResultType | None:
+    """Process a single file path, returning its contents or a summary."""
     try:
         if path.stat().st_size > max_size_kb * 1024:
             console.print(f"[yellow]Skipping large file:[/yellow] {path}")
