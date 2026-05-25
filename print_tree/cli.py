@@ -252,8 +252,15 @@ def process_path(
                     )
                 )
             else:
+                syntax = Syntax(
+                    content,
+                    lexer=detect_lexer(path),
+                    line_numbers=False,
+                    background_color="black",
+                    word_wrap=False,
+                )
                 console.print(f"[bold cyan]# {header}[/bold cyan]")
-                console.print(content)
+                console.print(syntax)
 
     except UnicodeDecodeError:
         console.print(f"[red]Encoding error:[/red] {path}")
